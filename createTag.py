@@ -15,9 +15,9 @@ Ht = ['100', '010', '110', '001', '101', '011', '111']
 # the decoding matrix
 R = ['0010000', '0000100', '0000010', '0000001']
 
-mainImage = "micky.png"
+mainImage = "goku.jpg"
 backgroundImage = "mickyMouseBG.jpg"
-stringCode = '10100110' #En code One byte using Hamming code --> 16 bytes, with top is zero and bottom is one.
+stringCode = '10001000' #En code One byte using Hamming code --> 16 bytes, with top is zero and bottom is one.
 
 stepLevel=16
 numDisp=16
@@ -162,5 +162,6 @@ height, width, depth = textureImage.shape #Total pixel number: img.size
 borderImage = img = np.zeros((height+2*border,width+2*border,3), np.uint8) 
 borderImage[border:height+border,border:width+border]=textureImage
 cv2.imshow('borderImage',borderImage)
+cv2.imwrite('borderImage.png', borderImage)
 cv2.waitKey(1000)
 

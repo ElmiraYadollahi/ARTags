@@ -8,13 +8,13 @@ from random import randint
 
 OFFSET = 5
 SIZE_SQUARE = 20
-STD_THRESHOLD = 30
 numDisp=16
 bSize=7
+stereo = cv2.StereoBM_create(numDisparities=numDisp, blockSize=bSize)
 
 encodedURL = "www.aut.ac.nz/minh"
 textureURL = "mickey.png"
-backgroundURL = "mickyMouseBG.jpg"
+backgroundURL = "background.jpg"
 
 qr = qrcode.QRCode(
     version=1,
@@ -25,29 +25,42 @@ qr = qrcode.QRCode(
 
 def stereoMatch(textureImage, scale=True):		
 	if scale:
-		textureImage = cv2.resize(textureImage, (1024, 512))
-	grayTexture = cv2.cvtColor(textureImage, cv2.COLOR_BGR2GRAY)
-	height, width = grayTexture.shape	
-	imgL = grayTexture[0:height, 0:width/2]
-	imgR = grayTexture[0:height, width/2:width]
-	stereo = cv2.StereoBM_create(numDisparities=numDisp, blockSize=bSize)
-	disparity = stereo.compute(imgL,imgR)		
+		textureImage = cv2.resize(textureImage, (1024, 512))	
+	height, width, shape = textureImage.shape	
+	imgL = textureImage[0:height, 0:width/2]
+	imgR = textureImage[0:height, width/2:width]	
+	disparity = stereoMatch2pairs(imgL, imgR)		
 	return disparity
 
 def stereoMatch2pairs(imgL, imgR):	
 	imgL = cv2.cvtColor(imgL, cv2.COLOR_BGR2GRAY)
-	imgR = cv2.cvtColor(imgR, cv2.COLOR_BGR2GRAY)
-	stereo = cv2.StereoBM_create(numDisparities=numDisp, blockSize=bSize)
-	disparity = stereo.compute(imgL,imgR)		
-	return disparity
+	imgR = cv2.cvtColor(imgR, cv2.COLOR_BGR2GRAY)	
+	height, width = imgL.shape	
+	
+	imgLWithGap = np.zeros((height, width + bSize + numDisp), np.uint8)
+	imgRWithGap = np.zeros((height, width + bSize + numDisp), np.uint8)
+	
+	for h in xrange( 0, height):
+		imgLWithGap[h:] = imgL[h,0]
+		imgRWithGap[h:] = imgR[h,0]		
+	
+	imgLWithGap[0:height,bSize + numDisp:bSize + numDisp + width] = imgL
+	imgRWithGap[0:height,bSize + numDisp:bSize + numDisp + width] = imgR	
+	
+	disparity = stereo.compute(imgLWithGap,imgRWithGap)		
+	
+	disparityNoGap = np.zeros((height, width), np.uint8)
+	disparityNoGap = disparity[0:height,bSize + numDisp:bSize + numDisp+width]	
+	
+	return disparityNoGap
 
 def decorateTexture(imgTexture):
 	height, width, depth = imgTexture.shape 
 	disparity = stereoMatch2pairs(imgTexture, imgTexture)
 	height, width = disparity.shape
 	blankIdentificationImg = np.zeros((height,width,1), np.uint8) #with 1 chanels
-	for h in xrange( bSize/2, height-bSize/2):
-		for w in xrange(numDisp+bSize/2, width-bSize/2):
+	for h in xrange( 0, height):
+		for w in xrange(0, width):
 			if disparity[h][w] < 0:
 				blankIdentificationImg[h][w] = 255 #white							
 	
@@ -57,9 +70,15 @@ def decorateTexture(imgTexture):
 	sure_bg = cv2.dilate(opening,kernel,iterations=5)
 	unknown = sure_bg.copy()
 	sure_bg = cv2.blur(sure_bg,(35,35))	
-	colourBG = cv2.imread(backgroundURL);
-	colourBG = cv2.resize(colourBG, (width, height))
-
+	colourBGOrig = cv2.imread(backgroundURL, cv2.IMREAD_COLOR);
+	heightBG, widthBG, depthBG = colourBGOrig.shape
+	
+	#build tiled colour background
+	colourBG = np.zeros((height, width, 3), np.uint8)
+	for h in xrange (0, height):
+		for w  in xrange (0, width):
+			colourBG[h,w] = colourBGOrig[h%heightBG, w%widthBG]	
+	
 	for h in xrange( 0, height):
 		for w in xrange(0, width):
 			if sure_bg[h][w] > 0 :
@@ -86,7 +105,6 @@ wRatio = 1.0*width/ConventionalSide
 
 imgTexture = cv2.resize(imgTexture, (ConventionalSide, ConventionalSide))
 height, width, depth = imgTexture.shape 
- 
 
 sbsImage = np.zeros((height, 2*width, 3), np.uint8) #with 3 chanels # img2 = img1.copy()
 sbsHeight, sbsWidth, sbsDepth = sbsImage.shape 
@@ -94,8 +112,6 @@ sbsHeight, sbsWidth, sbsDepth = sbsImage.shape
 sbsImage[0:height, width/2:3*width/2] = imgTexture
 sbsImage[0:height, 0:width/2] = imgTexture[0:height, width/2:width]
 sbsImage[0:height, 3*width/2:2*width] = imgTexture[0:height, 0:width/2]
-
-cv2.imshow('sbsImage',sbsImage)
 
 sbsImageNew = sbsImage.copy()
 for h in xrange(0, QR_NUMBER):	
@@ -108,9 +124,7 @@ for h in xrange(0, QR_NUMBER):
 		
 		sbsImageNew[y0:y1, x0-width:x1-width] = patternBox	
 		if qrArray[h][w] == False:	
-			sbsImageNew[y0:y1, x0-width+OFFSET:x1-width+OFFSET] = patternBox
-		#else:
-		#	sbsImageNew[y0:y1, x0:x1] = patternBox		
+			sbsImageNew[y0:y1, x0-width+OFFSET:x1-width+OFFSET] = patternBox			
 			
 	for w in xrange(QR_NUMBER/2, QR_NUMBER):			
 		y0 = SIZE_SQUARE + SIZE_SQUARE*h
@@ -126,25 +140,17 @@ for h in xrange(0, QR_NUMBER):
 		else:
 			sbsImageNew[y0:y1, x0:x1] = patternBox	
 			
-cv2.imshow('sbsImage',sbsImageNew)
 
 heightSBS, widthSBS, depthSBS = sbsImageNew.shape 
 
-print "ratio ", wRatio
 sbsQR = cv2.resize(sbsImageNew, (int(wRatio*widthSBS), int(hRatio*heightSBS)))
-#depth = stereoMatch(sbsImageNew)
 depth = stereoMatch(sbsQR)
-
 ret,thresh1 = cv2.threshold(depth,0,255,cv2.THRESH_BINARY)
 
 kernel = np.ones((7,7),np.uint8)
-#opening = cv2.morphologyEx(thresh1, cv2.MORPH_OPEN, kernel)
 closing = cv2.morphologyEx(thresh1, cv2.MORPH_CLOSE, kernel)
 
 cv2.imshow('sbsQR',sbsQR)
-#cv2.imshow('thresh1',thresh1)
-#for x in thresh1:
-#	print x
 plt.imshow(255-closing, cmap = 'gray')
 plt.show()
 
